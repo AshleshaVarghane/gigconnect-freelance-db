@@ -1,97 +1,125 @@
-# GigConnect — Freelance Job Marketplace Database
+# 🎯 GigConnect
+### *Where Talent Meets Opportunity — A Freelance Marketplace, Built From the Database Up*
 
-A normalized PostgreSQL database modeling a freelance marketplace
-(think Upwork/Fiverr-style): companies post jobs, freelancers apply,
-and completed contracts get rated. Built to demonstrate core SQL
-fundamentals — joins, aggregates, `GROUP BY`/`HAVING`, `CASE WHEN`,
-subqueries — against a schema with real business logic, not just flat
-tables.
+> Every freelance platform you've ever used — Upwork, Fiverr, Toptal — runs on the same
+> invisible skeleton: companies post work, freelancers chase it, some get hired, fewer
+> get 5 stars. This project **is** that skeleton, built and queried entirely in
+> PostgreSQL.
 
-## Why this project
+---
 
-A marketplace has a natural funnel (posting → application → hire →
-review), which means the queries aren't just "count rows" — they
-answer real product questions: which jobs get the most interest,
-which freelancers convert applications into hires, which companies
-pay the most. That funnel structure is what makes this more
-interesting than a single-table CRUD demo.
+## 🕹️ The Premise
 
-## Schema
+Picture the lifecycle of a single gig:
 
 ```
-companies ──1:N── job_postings ──1:N── applications ──1:1── reviews
-                                            │
-                                            N:1
-                                            │
-                                       freelancers
+   🏢 Company posts a job
+          │
+          ▼
+   📝 Freelancers apply
+          │
+          ▼
+   🔍 Some get shortlisted, most get rejected
+          │
+          ▼
+   🤝 One gets hired
+          │
+          ▼
+   ⭐ A review closes the loop
 ```
 
-- **companies** — company_id, company_name, industry, city
-- **freelancers** — freelancer_id, full_name, email, city, primary_skill, experience_years, hourly_rate
-- **job_postings** — job_id, company_id (FK), title, category, budget, posted_date, status (OPEN/CLOSED)
-- **applications** — application_id, job_id (FK), freelancer_id (FK), applied_date, status (APPLIED/SHORTLISTED/REJECTED/HIRED)
-- **reviews** — review_id, application_id (FK, unique), rating (1-5), review_date, comments
+That's not just a story — it's a **schema**. Five tables, each one a stage in that
+funnel, connected by foreign keys instead of guesswork.
 
-Constraints worth noting:
-- `applications` has a `UNIQUE (job_id, freelancer_id)` constraint — a freelancer can't apply to the same job twice
-- `reviews.application_id` is `UNIQUE` — one review per completed contract
-- `job_postings.status` and `applications.status` are both `CHECK`-constrained to a fixed set of valid values
-- Every foreign key column has an index, since that's what every query here joins on
+---
 
-## File structure
+## 🗺️ The Blueprint
 
 ```
-sql/
-├── 01_schema.sql      -- tables, constraints, indexes
-├── 02_seed_data.sql   -- 12 companies, 45 freelancers, 40 jobs, 150 applications, ~16 reviews
-└── 03_queries.sql     -- 14 queries answering real marketplace questions
+ companies                job_postings              applications              reviews
+┌───────────────┐  1:N  ┌────────────────┐   1:N  ┌────────────────┐  1:1  ┌──────────────┐
+│ company_id PK │──────▶│ job_id      PK │───────▶│ application_id │──────▶│ review_id PK │
+│ company_name  │       │ company_id  FK │        │ job_id      FK │       │ application_ │
+│ industry      │       │ title          │        │ freelancer_ FK │       │ rating (1-5) │
+│ city          │       │ category       │        │ status         │       │ review_date  │
+└───────────────┘       │ budget         │        └────────┬───────┘       │ comments     │
+                         │ posted_date    │                 │ N:1          └──────────────┘
+                         │ status         │                 ▼
+                         └────────────────┘        freelancers
+                                                   ┌────────────────┐
+                                                   │ freelancer_ PK │
+                                                   │ full_name      │
+                                                   │ primary_skill  │
+                                                   │ experience_yrs │
+                                                   │ hourly_rate    │
+                                                   └────────────────┘
 ```
 
-**Note on dates:** the seed data anchors `posted_date` and `applied_date`
-to `CURRENT_DATE` rather than a fixed calendar date, so the OPEN/CLOSED
-job split and the "days to first application" query stay realistic no
-matter when you run this script.
+**The `applications` table is the plot twist.** It's not just a join table — it carries
+its own status (`APPLIED` → `SHORTLISTED` → `HIRED`/`REJECTED`), which means the data
+itself tells a story about *who almost got the gig* and *who actually did*.
 
-## How to run it
+---
 
-Requires PostgreSQL (tested on Postgres 16).
+## 🧰 What's in the Box
+
+| File | Role |
+|---|---|
+| `01_schema.sql` | Lays the foundation — 5 tables, foreign keys, `CHECK` constraints, and indexes on every join column |
+| `02_seed_data.sql` | Breathes life into it — 12 companies, 45 freelancers, 40 jobs, 150 applications, ~20 reviews, all generated with SQL itself (no CSV imports) |
+| `03_queries.sql` | Interrogates it — 14 questions a real marketplace ops team would actually ask |
+
+**A quiet detail that matters:** the seed data anchors every date to `CURRENT_DATE`
+rather than a hardcoded calendar date. Run this script today, run it a year from now —
+the "open jobs" and "days to first application" queries will still make sense either way.
+
+---
+
+## ⚡ Get It Running
 
 ```bash
 createdb gigconnect
 
-psql -d gigconnect -f sql/01_schema.sql
-psql -d gigconnect -f sql/02_seed_data.sql
-psql -d gigconnect -f sql/03_queries.sql
+psql -d gigconnect -f 01_schema.sql
+psql -d gigconnect -f 02_seed_data.sql
+psql -d gigconnect -f 03_queries.sql
 ```
 
-Each seed script ends with a row-count check so you can confirm the
-load worked before running the queries.
+Three commands, one working marketplace. Each step prints a sanity check so you know
+it worked before moving to the next.
 
-## What the queries cover
+---
 
-1. All open job postings with company name (JOIN)
-2. Job postings per company (JOIN + GROUP BY)
-3. Categories with more than 4 postings (GROUP BY + HAVING)
-4. Full application funnel breakdown per job (conditional aggregation)
-5. Freelancers who've applied to more than 5 jobs (GROUP BY + HAVING)
-6. Freelancers who have never applied to a job (LEFT JOIN + IS NULL)
-7. Every application labeled by funnel stage (CASE WHEN)
-8. Top 5 highest-rated freelancers (JOIN across 3 tables + AVG)
-9. Companies with the highest average job budget
-10. Freelancers earning above the platform-average hourly rate (subquery)
-11. Most in-demand skill categories by application volume
-12. Hire rate per freelancer: hires ÷ total applications
-13. Companies filtered by city name pattern (LIKE)
-14. Average days between a job posting and its first application
+## 🔎 Questions This Database Can Answer
 
-## What I'd add next
+- 💼 Which jobs are open *right now*, and who posted them?
+- 📊 Which skill category gets the most applications — is UI/UX hot or is everyone chasing Web Dev?
+- 🏆 Which freelancers actually convert applications into hires (hire rate ≠ application count)?
+- 💰 Which companies pay the most on average — and is that industry-specific?
+- 👻 Which freelancers are on the platform but have never lifted a finger to apply?
+- ⭐ Who are the top-rated freelancers, and do they charge more per hour because of it?
+- ⏱️ On average, how long does it take a job posting to get its first bite?
 
-- A `contracts` table to separate "hired" from "contract completed,"
-  since right now a review is the only signal a contract finished
-- A trigger to auto-close a job posting once it reaches HIRED status
-- Window functions once I've learned them — e.g. ranking freelancers
-  within their skill category by hire rate, or a running count of
-  new job postings per month
+Every one of these is a real `SELECT` in `03_queries.sql` — joins, `GROUP BY`/`HAVING`,
+`CASE WHEN` funnel labeling, subqueries, and conditional aggregation, all working
+against a schema designed to actually need them.
 
-## Tech
-PostgreSQL 16 · pure SQL, no ORM
+---
+
+## 🚧 If This Were a Real Startup, Next I'd Ship...
+
+- [ ] A `contracts` table to separate "hired" from "actually finished the work"
+- [ ] A trigger to auto-close a job the moment it gets a `HIRED` application
+- [ ] Window functions — ranking freelancers within their skill category, running
+      totals of monthly job postings
+- [ ] `EXPLAIN ANALYZE` benchmarks once the dataset scales past what an index doesn't matter for
+
+---
+
+## 🛠️ Built With
+PostgreSQL · Pure SQL · Zero ORMs · Zero shortcuts
+
+---
+
+*Constraints enforced by the database, not just assumed by the developer — because the
+worst bugs are the ones the schema should've caught in the first place.*
